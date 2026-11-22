@@ -265,6 +265,32 @@ body[data-acc=editor]{--acc:var(--violet)}
 .eres mark{background:rgba(245,185,66,.45);color:inherit;border-radius:2px}
 .statusbar button.sb{border:1px solid transparent;background:none;font:500 11px var(--mono);color:var(--muted);padding:2px 7px;border-radius:6px}
 .statusbar button.sb:hover{border-color:var(--line2);color:var(--text)}
+
+/* JSON-Ansicht */
+.jbar{display:none;align-items:center;gap:7px;flex-wrap:wrap;padding:6px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.jbar.show{display:flex}
+.jt{border:1px solid var(--line);background:var(--panel2);color:var(--muted);border-radius:8px;padding:5px 13px;font:600 12.5px var(--sans)}
+.jt.on{color:var(--text);border-color:var(--acc);box-shadow:inset 0 -2px 0 var(--acc)}
+.jbar .sep{width:1px;height:22px;background:var(--line2);margin:0 3px}
+.jbar label.o{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+#jFilter{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:500 13px var(--mono);outline:none;width:220px;color:var(--text)}
+#jFilter:focus{border-color:var(--acc)}
+.jtree{position:absolute;inset:0;overflow:auto;display:none;background:var(--grid);font:13px/1.75 var(--mono);padding:6px 0 60px}
+.jtree.show{display:block}
+.jr{display:grid;grid-template-columns:minmax(200px,34%) 1fr;align-items:start;border-bottom:1px solid color-mix(in srgb,var(--gridline) 60%,transparent)}
+.jr:hover{background:var(--hover)}
+.jr.sel{background:color-mix(in srgb,var(--acc) 16%,transparent)}
+.jk{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:14px;cursor:default}
+.jk .tg{display:inline-block;width:18px;color:var(--dim);text-align:center;cursor:pointer;user-select:none}
+.jk .jkey{color:var(--blue)}
+.jk .jdim{color:var(--dim)}
+.jv{white-space:pre-wrap;word-break:break-word;padding-right:16px;user-select:text}
+.jn.c>.jc{display:none}
+.jv.z,.jv.o{color:var(--dim)}
+[data-theme=dark] .jv.s{color:#f78ca2}[data-theme=dark] .jv.n{color:#7ee7a8}[data-theme=dark] .jv.b{color:#c792ea}
+[data-theme=light] .jv.s{color:#be185d}[data-theme=light] .jv.n{color:#15803d}[data-theme=light] .jv.b{color:#7c3aed}
+.jmsg{padding:30px;color:var(--muted);text-align:center}
+.jmsg b{color:var(--red)}
 /* CodeMirror (Grundgerüst) */
 .CodeMirror{position:relative;overflow:hidden;height:100%;background:var(--grid);color:var(--text);font:13px/1.6 var(--mono);direction:ltr}
 .CodeMirror-lines{padding:6px 0;cursor:text;min-height:1px}
@@ -686,6 +712,7 @@ span.CodeMirror-selectedtext{background:none}
           <hr>
           <button data-ed="jsonFmt">JSON schön formatieren</button>
           <button data-ed="jsonMin">JSON kompakt machen</button>
+          <button data-ed="jsonSort">JSON-Schlüssel A–Z sortieren</button>
           <div class="hint">Wirkt auf die Markierung – ohne Markierung auf die ganze Datei.</div>
         </div>
       </div>
@@ -718,8 +745,20 @@ span.CodeMirror-selectedtext{background:none}
       <span class="cnt" id="edCount"></span>
       <button class="ib" data-ed="search" title="Schließen (Esc)" style="height:28px;min-width:28px">✕</button>
     </div>
+    <div class="jbar" id="edJBar">
+      <button class="jt on" data-jv="tree">JSON</button><button class="jt" data-jv="raw">Rohdaten</button>
+      <span class="sep"></span>
+      <button class="btn sm" data-ed="save">Speichern</button>
+      <button class="btn sm" data-jx="copy">Kopieren</button>
+      <button class="btn sm" data-jx="collapse">Alle einklappen</button>
+      <button class="btn sm" data-jx="expand">Alle ausklappen</button>
+      <label class="o"><input type="checkbox" id="jSort"> Schlüssel A–Z</label>
+      <span style="flex:1"></span>
+      <input type="text" id="jFilter" placeholder="JSON filtern …" autocomplete="off" spellcheck="false">
+    </div>
     <div class="ehost" id="edWrap">
       <div id="edHost" style="position:absolute;inset:0"></div>
+      <div class="jtree" id="edTree"></div>
       <div class="bigempty" id="edEmpty"><div class="box"><span class="ico" style="--c:var(--violet)"><i data-ic="code" data-s="24"></i></span><h3 id="edEmptyH">Keine Datei geöffnet</h3><p id="edEmptyP">Öffne eine oder mehrere Dateien – oder zieh sie einfach hier hinein. Geht mit Text, Log, CSV, JSON, XML, HTML, INI, Code und vielem mehr.</p><div class="row" style="justify-content:center"><button class="btn primary" data-ed="open">Dateien öffnen</button><button class="btn" data-ed="new">+ Neue Datei</button></div></div></div>
     </div>
     <div class="eres" id="edRes"></div>
@@ -1197,7 +1236,7 @@ async function edEnsure(){
  if(!ED.cm){ $('#edEmptyH').textContent='Editor wird geladen …'; $('#edEmptyP').textContent='Einen Moment bitte.'; $('#edEmpty').style.display=''; try{ await loadCM(); if(!window.CodeMirror) throw new Error('fehlt'); }catch(e){ $('#edEmptyH').textContent='Editor konnte nicht geladen werden'; $('#edEmptyP').textContent='Bitte die Internetverbindung prüfen und die Seite neu laden.'; return; } if(!ED.cm) edCreate(); $('#edEmptyH').textContent='Keine Datei geöffnet'; $('#edEmptyP').textContent='Öffne eine oder mehrere Dateien – oder zieh sie einfach hier hinein. Geht mit Text, Log, CSV, JSON, XML, HTML, INI, Code und vielem mehr.'; }
  const it=curCode()||codeItems()[0]; if(it) edOpen(it.id); else edEmptyState();
 }
-function edEmptyState(){ ED.cur=null; $('#edHost').style.visibility='hidden'; $('#edEmpty').style.display=''; $('#edPos').textContent='–'; $('#edLines').textContent=''; $('#edSize').textContent=''; $('#edEol').textContent=''; $('#edEnc').textContent=''; edTabs(); }
+function edEmptyState(){ ED.cur=null; $('#edJBar').classList.remove('show'); $('#edTree').classList.remove('show'); JT.on=false; $('#edHost').style.visibility='hidden'; $('#edEmpty').style.display=''; $('#edPos').textContent='–'; $('#edLines').textContent=''; $('#edSize').textContent=''; $('#edEol').textContent=''; $('#edEnc').textContent=''; edTabs(); }
 function edOpen(id){
  const it=Store.items[id]; if(!it||it.deleted||it.type!=='code')return; ED.cur=id;
  if(!ED.cm){ edEnsure(); return; }
@@ -1205,13 +1244,13 @@ function edOpen(id){
  ED.swapping=true; ED.cm.swapDoc(ED.docs[id]); ED.swapping=false;
  $('#edEmpty').style.display='none'; $('#edHost').style.visibility='';
  if(it.big&&!ED.docs[id].getValue()) toast('Diese Datei war zu groß zum Zwischenspeichern – bitte erneut öffnen');
- edTabs(); edStatus(); edSizeNow(); if($('#edSearch').classList.contains('open')) edHLSoon();
+ edTabs(); edStatus(); edSizeNow(); edViewUpdate(); if($('#edSearch').classList.contains('open')) edHLSoon();
  setTimeout(()=>{ ED.cm.refresh(); if(CUR==='editor'&&!$('#modal').classList.contains('open')) ED.cm.focus(); },30);
 }
 function edTabs(){ const list=codeItems(); const el=$('#edTabs'); if(!el)return; el.innerHTML=list.map(i=>`<button class="etab ${i.id===ED.cur?'on':''}" data-etab="${i.id}" title="${esc(i.title)}${i.dirty?' – nicht gespeichert':''}&#10;Doppelklick: umbenennen"><span>${esc(i.title)}</span>${i.dirty?'<b class="dot">●</b>':''}<i data-eclose="${i.id}" title="Schließen">×</i></button>`).join('')+'<button class="etab add" data-new="code" title="Neue Datei">+</button>'; }
 $('#edTabs').addEventListener('click',e=>{ const c=e.target.closest('[data-eclose]'); if(c){ e.stopPropagation(); edClose(c.dataset.eclose); return; } const t=e.target.closest('[data-etab]'); if(t&&t.dataset.etab!==ED.cur) edOpen(t.dataset.etab); });
 $('#edTabs').addEventListener('auxclick',e=>{ const t=e.target.closest('[data-etab]'); if(t&&e.button===1){ e.preventDefault(); edClose(t.dataset.etab); } });
-$('#edTabs').addEventListener('dblclick',async e=>{ const t=e.target.closest('[data-etab]'); if(!t||e.target.closest('[data-eclose]'))return; const it=Store.items[t.dataset.etab]; if(!it)return; const n=await ask('Datei umbenennen','Dateiname',it.title); if(!n||n===it.title)return; it.title=n; const m=EXTMODE[(n.split('.').pop()||'').toLowerCase()]; if(m&&ED.cur===it.id&&ED.cm){ it.mode=m; ED.cm.setOption('mode',modeSpec(m)); } delete ED.handles[it.id]; saveItem(it); edStatus(); });
+$('#edTabs').addEventListener('dblclick',async e=>{ const t=e.target.closest('[data-etab]'); if(!t||e.target.closest('[data-eclose]'))return; const it=Store.items[t.dataset.etab]; if(!it)return; const n=await ask('Datei umbenennen','Dateiname',it.title); if(!n||n===it.title)return; it.title=n; const m=EXTMODE[(n.split('.').pop()||'').toLowerCase()]; if(m&&ED.cur===it.id&&ED.cm){ it.mode=m; ED.cm.setOption('mode',modeSpec(m)); edViewUpdate(); } delete ED.handles[it.id]; saveItem(it); edStatus(); });
 function edNew(){ const names=new Set(codeItems().map(i=>i.title)); let n=1; while(names.has('Neu '+n+'.txt')) n++; const it={id:uid(),type:'code',title:'Neu '+n+'.txt',content:'',eol:'\r\n',enc:'UTF-8',bom:false,mode:'text',dirty:false,created:Date.now()}; saveItem(it,true); ED.cur=it.id; go('editor'); edOpen(it.id); }
 async function edOpenFiles(){
  if(window.showOpenFilePicker&&!inFrame()){ try{ const hs=await window.showOpenFilePicker({multiple:true}); for(const h of hs) await edLoadFile(await h.getFile(),h); return; }catch(e){ if(e&&e.name==='AbortError') return; } }
@@ -1232,7 +1271,8 @@ async function edLoadFile(f,handle){
  const same=codeItems().find(i=>i.title===f.name&&!i.dirty&&ED.docs[i.id]&&ED.docs[i.id].getValue()===text.replace(/\r\n?/g,'\n'));
  if(same){ ED.cur=same.id; go('editor'); edOpen(same.id); return; }
  const content=text.replace(/\r\n?/g,'\n'); const big=content.length>1000000;
- const it={id:uid(),type:'code',title:f.name,content:big?'':content,big,eol,enc,bom,mode:EXTMODE[ext]||'text',dirty:false,created:Date.now()};
+ let mode=EXTMODE[ext]||'text'; if(mode==='text'&&content.length<5000000){ const t=content.trimStart(); if(t[0]==='{'||t[0]==='['){ try{ JSON.parse(content); mode='json'; }catch(e){} } }
+ const it={id:uid(),type:'code',title:f.name,content:big?'':content,big,eol,enc,bom,mode,dirty:false,created:Date.now()};
  ED.pending[it.id]=content; saveItem(it,true);
  if(handle) ED.handles[it.id]=handle; ED.raw[it.id]=bytes;
  ED.cur=it.id; go('editor'); edOpen(it.id);
@@ -1263,7 +1303,7 @@ function edRemote(id){ const it=Store.items[id]; if(it.deleted){ delete ED.docs[
 let edST=0; function edStatusSoon(){ if(edST)return; edST=requestAnimationFrame(()=>{ edST=0; edStatus(); }); clearTimeout(ED.szT); ED.szT=setTimeout(edSizeNow,500); }
 function edStatus(){ const cm=ED.cm, it=curCode(); if(!cm||!it)return; const c=cm.getCursor(); const sl=cm.somethingSelected()?cm.getSelection().length:0; $('#edPos').textContent=`Zeile ${(c.line+1).toLocaleString('de-DE')}, Spalte ${c.ch+1}`+(sl?` · ${sl.toLocaleString('de-DE')} markiert`:''); $('#edLines').textContent=cm.lineCount().toLocaleString('de-DE')+' Zeilen'; $('#edEnc').textContent=it.enc+(it.bom?' mit BOM':''); $('#edEol').textContent=it.eol==='\r\n'?'CRLF (Windows)':'LF (Unix)'; $('#edMode').value=it.mode||'text'; }
 function edSizeNow(){ const it=curCode(); if(!it||!ED.cm)return; const n=ED.cm.getValue().length+(it.eol==='\r\n'?ED.cm.lineCount()-1:0); $('#edSize').textContent=n<1024?n+' Byte':n<1048576?(n/1024).toLocaleString('de-DE',{maximumFractionDigits:1})+' KB':(n/1048576).toLocaleString('de-DE',{maximumFractionDigits:2})+' MB'; }
-$('#edMode').addEventListener('change',e=>{ const it=curCode(); if(!it||!ED.cm)return; it.mode=e.target.value; ED.cm.setOption('mode',modeSpec(it.mode)); saveItem(it); ED.cm.focus(); });
+$('#edMode').addEventListener('change',e=>{ const it=curCode(); if(!it||!ED.cm)return; it.mode=e.target.value; ED.cm.setOption('mode',modeSpec(it.mode)); saveItem(it); edViewUpdate(); if(!JT.on) ED.cm.focus(); });
 $('#edEol').onclick=()=>{ const it=curCode(); if(!it)return; it.eol=it.eol==='\r\n'?'\n':'\r\n'; it.dirty=true; saveItem(it); edStatus(); toast('Zeilenende: '+(it.eol==='\r\n'?'Windows (CRLF)':'Unix (LF)')+' – gilt beim Speichern'); };
 $('#edEnc').onclick=async()=>{ const it=curCode(); if(!it)return; const cur=it.enc==='Windows-1252'?'1252':it.bom?'bom':'utf8'; const raw=ED.raw[it.id];
  const r=await dialog({title:'Kodierung',body:`<label class="fl">Kodierung<select name="e"><option value="utf8" ${cur==='utf8'?'selected':''}>UTF-8</option><option value="bom" ${cur==='bom'?'selected':''}>UTF-8 mit BOM</option><option value="1252" ${cur==='1252'?'selected':''}>ANSI (Windows-1252)</option></select></label>${raw?'<label class="chkl"><input type="checkbox" name="re"> Datei mit dieser Kodierung neu einlesen (wenn Umlaute falsch aussehen)</label>':''}<p class="small mut">Ohne Haken wird nur beim Speichern in dieser Kodierung geschrieben.</p>`,ok:'Übernehmen'}); if(!r) return;
@@ -1273,7 +1313,7 @@ $('#edEnc').onclick=async()=>{ const it=curCode(); if(!it)return; const cur=it.e
 /* Suchen & Ersetzen */
 function edQuery(){ const q=$('#edFind').value; if(!q) return null; let src=$('#edRegex').checked?q:q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); if($('#edWord').checked) src='\\b(?:'+src+')\\b'; try{ return new RegExp(src,'gm'+($('#edCase').checked?'':'i')); }catch(e){ return 'bad'; } }
 function edRepl(){ const r=$('#edRepl').value; return $('#edRegex').checked?r.replace(/\\n/g,'\n').replace(/\\t/g,'\t'):r; }
-function edShowSearch(replace,open,close){ const p=$('#edSearch'); const isOpen=p.classList.contains('open'); if(close||(!open&&isOpen)){ p.classList.remove('open'); if(ED.ov&&ED.cm){ ED.cm.removeOverlay(ED.ov); ED.ov=null; } if(ED.cm) ED.cm.focus(); return; } p.classList.add('open'); if(ED.cm&&ED.cm.somethingSelected()){ const s=ED.cm.getSelection(); if(s&&!s.includes('\n')&&s.length<200) $('#edFind').value=s; } const f=$('#edFind'), r=$('#edRepl'); if(replace&&f.value){ r.focus(); r.select(); } else { f.focus(); f.select(); } edHighlight(); }
+function edShowSearch(replace,open,close){ if(JT.on&&!close) edSetView('raw'); const p=$('#edSearch'); const isOpen=p.classList.contains('open'); if(close||(!open&&isOpen)){ p.classList.remove('open'); if(ED.ov&&ED.cm){ ED.cm.removeOverlay(ED.ov); ED.ov=null; } if(ED.cm) ED.cm.focus(); return; } p.classList.add('open'); if(ED.cm&&ED.cm.somethingSelected()){ const s=ED.cm.getSelection(); if(s&&!s.includes('\n')&&s.length<200) $('#edFind').value=s; } const f=$('#edFind'), r=$('#edRepl'); if(replace&&f.value){ r.focus(); r.select(); } else { f.focus(); f.select(); } edHighlight(); }
 let edHLT=0; function edHLSoon(){ clearTimeout(edHLT); edHLT=setTimeout(edHighlight,200); }
 function edHighlight(){ const cm=ED.cm; if(!cm)return; if(ED.ov){ cm.removeOverlay(ED.ov); ED.ov=null; } const re=edQuery(); $('#edFind').classList.toggle('bad',re==='bad'); if(!re||re==='bad'||!curCode()){ $('#edCount').textContent=re==='bad'?'Fehler im Ausdruck':''; return; }
  const r2=new RegExp(re.source,re.flags.replace('m',''));
@@ -1357,6 +1397,7 @@ function edCmd(c){
   case 'tabs2sp': return textOp(s=>s.replace(/\t/g,'    '));
   case 'sp2tabs': return textOp(s=>s.replace(/^((?: {4})+)/gm,m=>'\t'.repeat(m.length/4)));
   case 'jsonFmt': return textOp(s=>{ try{ return JSON.stringify(JSON.parse(s),null,2); }catch(e){ toast('Kein gültiges JSON: '+e.message); return s; } });
+  case 'jsonSort': return textOp(s=>{ try{ return JSON.stringify(jSortKeys(JSON.parse(s)),null,2); }catch(e){ toast('Kein gültiges JSON: '+e.message); return s; } });
   case 'jsonMin': return textOp(s=>{ try{ return JSON.stringify(JSON.parse(s)); }catch(e){ toast('Kein gültiges JSON: '+e.message); return s; } });
   case 'wrap': ED.opt.wrap=!ED.opt.wrap; edSaveOpt(); if(cm) cm.setOption('lineWrapping',ED.opt.wrap); toast('Zeilenumbruch '+(ED.opt.wrap?'an':'aus')); return;
   case 'nums': ED.opt.nums=!ED.opt.nums; edSaveOpt(); if(cm) cm.setOption('lineNumbers',ED.opt.nums); return;
@@ -1367,6 +1408,41 @@ document.addEventListener('click',e=>{ const b=e.target.closest('[data-ed]'); if
 $('#edWrap').addEventListener('dragover',e=>{ e.preventDefault(); $('#edWrap').classList.add('drop-on'); });
 $('#edWrap').addEventListener('dragleave',e=>{ if(!$('#edWrap').contains(e.relatedTarget)) $('#edWrap').classList.remove('drop-on'); });
 window.addEventListener('beforeunload',()=>{ if(ED.cur&&ED.pt){ clearTimeout(ED.pt); edPersist(ED.cur); } });
+
+
+/* JSON-Baumansicht (wie im Firefox) */
+const JT={on:false,data:null,nodes:[]};
+function jSortKeys(v){ if(Array.isArray(v)) return v.map(jSortKeys); if(v&&typeof v==='object'){ const o={}; Object.keys(v).sort((a,b)=>COLL.compare(a,b)).forEach(k=>o[k]=jSortKeys(v[k])); return o; } return v; }
+function edViewUpdate(){ const it=curCode(); const isJ=!!(it&&it.mode==='json'); $('#edJBar').classList.toggle('show',isJ); if(!isJ){ if(JT.on){ JT.on=false; $('#edTree').classList.remove('show'); $('#edHost').style.visibility=''; } return; } edSetView(it.view||'tree',true); }
+function edSetView(v,noSave){ const it=curCode(); if(!it)return; $$('#edJBar .jt').forEach(b=>b.classList.toggle('on',b.dataset.jv===v)); if(it.view!==v){ it.view=v; if(!noSave) saveItem(it); }
+ if(v==='tree'){ JT.on=true; $('#edHost').style.visibility='hidden'; $('#edTree').classList.add('show'); jRender(); }
+ else { JT.on=false; $('#edTree').classList.remove('show'); $('#edHost').style.visibility=''; if(ED.cm){ ED.cm.refresh(); ED.cm.focus(); } } }
+const jCls=v=>v===null?'z':typeof v==='string'?'s':typeof v==='number'?'n':typeof v==='boolean'?'b':'o';
+const jFmt=v=>v===null?'null':typeof v==='string'?esc(JSON.stringify(v).slice(1,-1).replace(/\\"/g,'"')):esc(String(v));
+const jPrev=v=>Array.isArray(v)?'Array ['+v.length+']':'Objekt {'+Object.keys(v).length+'}';
+function jEntries(v){ const e=Array.isArray(v)?v.map((x,i)=>[i,x]):Object.entries(v); if(!Array.isArray(v)&&$('#jSort').checked) e.sort((a,b)=>COLL.compare(String(a[0]),String(b[0]))); return e; }
+function jRow(k,v,d,open,kids){ const pad=`padding-left:${d*18+8}px`; const key=`<span class="jkey">${esc(String(k))}</span><span class="jdim">:</span>`;
+ if(v===null||typeof v!=='object') return `<div class="jn"><div class="jr"><div class="jk" style="${pad}"><span class="tg"></span>${key}</div><div class="jv ${jCls(v)}">${jFmt(v)}</div></div></div>`;
+ const i=JT.nodes.push({v,d})-1;
+ return `<div class="jn${open?'':' c'}" data-i="${i}"><div class="jr"><div class="jk" style="${pad}"><span class="tg">${open?'▾':'▸'}</span>${key}</div><div class="jv o">${jPrev(v)}</div></div><div class="jc"${open?' data-done="1"':''}>${kids||''}</div></div>`; }
+function jExpand(n){ if(!n.classList.contains('c'))return; const c=n.querySelector(':scope > .jc'); if(!c.dataset.done){ const {v,d}=JT.nodes[+n.dataset.i]; c.innerHTML=jEntries(v).map(([k,x])=>jRow(k,x,d+1)).join(''); c.dataset.done='1'; } n.classList.remove('c'); n.querySelector(':scope > .jr .tg').textContent='▾'; }
+function jCollapse(n){ n.classList.add('c'); n.querySelector(':scope > .jr .tg').textContent='▸'; }
+function jExpandAll(max){ const t=$('#edTree'); let done=0, list; while((list=$$('.jn.c',t)).length){ for(const n of list){ jExpand(n); if(++done>=max){ toast('Sehr große Datei – nur teilweise ausgeklappt'); return; } } } }
+function jFiltered(k,v,d,f){ const km=String(k).toLowerCase().includes(f); if(v===null||typeof v!=='object') return (km||String(v).toLowerCase().includes(f))?jRow(k,v,d):''; if(km) return jRow(k,v,d); const kids=jEntries(v).map(([kk,x])=>jFiltered(kk,x,d+1,f)).join(''); return kids?jRow(k,v,d,true,kids):''; }
+function jRender(){ const it=curCode(), box=$('#edTree'); if(!it||!ED.docs[it.id]&&ED.pending[it.id]==null&&!it.content){ box.innerHTML=''; return; } const text=edDocText(it); JT.nodes=[];
+ try{ JT.data=text.trim()?JSON.parse(text):null; }catch(e){ JT.data=undefined; box.innerHTML=`<div class="jmsg"><b>Kein gültiges JSON</b><br>${esc(e.message)}<br><br><button class="btn" data-jv="raw">Rohdaten anzeigen</button></div>`; return; }
+ const v=JT.data, f=$('#jFilter').value.trim().toLowerCase();
+ if(v===null||typeof v!=='object'){ box.innerHTML=`<div class="jr"><div class="jk" style="padding-left:8px"><span class="tg"></span><span class="jdim">Wert</span></div><div class="jv ${jCls(v)}">${jFmt(v)}</div></div>`; return; }
+ if(f){ const h=jEntries(v).map(([k,x])=>jFiltered(k,x,0,f)).join(''); box.innerHTML=h||'<div class="jmsg">Nichts gefunden</div>'; return; }
+ box.innerHTML=jEntries(v).map(([k,x])=>jRow(k,x,0)).join('');
+ if(text.length<400000) jExpandAll(20000); else $$('#edTree > .jn.c').forEach(jExpand); }
+$('#edJBar').addEventListener('click',e=>{ const b=e.target.closest('[data-jv],[data-jx]'); if(!b)return; if(b.dataset.jv) return edSetView(b.dataset.jv); const x=b.dataset.jx; if(!JT.on) edSetView('tree');
+ if(x==='copy'){ if(JT.data===undefined){ copyText(edDocText(curCode())); return; } copyText(JSON.stringify($('#jSort').checked?jSortKeys(JT.data):JT.data,null,2)); }
+ else if(x==='expand') jExpandAll(50000);
+ else if(x==='collapse') $$('#edTree .jn[data-i]').forEach(jCollapse); });
+$('#edTree').addEventListener('click',e=>{ if(e.target.closest('[data-jv]')){ edSetView('raw'); return; } const r=e.target.closest('.jr'); if(!r)return; $$('#edTree .jr.sel').forEach(x=>x.classList.remove('sel')); r.classList.add('sel'); const n=r.parentElement; if(n.dataset.i!=null&&(e.target.closest('.jk'))) n.classList.contains('c')?jExpand(n):jCollapse(n); });
+$('#jSort').addEventListener('change',()=>{ if(JT.on) jRender(); });
+let jFT=0; $('#jFilter').addEventListener('input',()=>{ clearTimeout(jFT); jFT=setTimeout(()=>{ if(!JT.on) edSetView('tree'); else jRender(); },200); });
 
 /* ============ Vorlagen ============ */
 function monthName(){ return new Date().toLocaleDateString('de-DE',{month:'long',year:'numeric'}); }
