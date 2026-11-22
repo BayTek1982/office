@@ -426,6 +426,10 @@ span.CodeMirror-selectedtext{background:none}
       <div class="big" id="stTotal">0</div>
       <div class="mut">Dateien gesamt</div>
       <p class="mut small" id="stInfo" style="line-height:1.55;margin:14px 0 0"></p>
+      <div class="row" style="margin-top:14px;gap:7px">
+        <button class="btn sm" id="bkSave" title="Alle Dateien und Einstellungen in eine Datei speichern"><i data-ic="download" data-s="14"></i> Sicherung speichern</button>
+        <button class="btn sm" id="bkLoad" title="Sicherung aus einem anderen Browser oder Gerät laden"><i data-ic="upload" data-s="14"></i> Sicherung laden</button>
+      </div>
     </div>
     <div class="tile app" style="--c:var(--blue)" data-go="text">
       <div class="ah"><span class="ico"><i data-ic="doc" data-s="24"></i></span><span class="num" id="cText">0</span></div>
@@ -908,7 +912,7 @@ function renderStart(){ const h=new Date().getHours(); $('#greet').textContent=h
  const rec=items().slice(0,7); const L={text:'TEXT',sheet:'TABELLE',note:'NOTIZ',code:'EDITOR'};
  $('#recent').innerHTML=rec.length?rec.map(i=>`<button class="ri" data-open="${i.id}"><span class="tag ${i.type}">${L[i.type]}</span><b>${esc(i.title||(i.type==='note'?(plain(i.html).slice(0,50)||'Neue Notiz'):'Unbenannt'))}</b><small>${fmtDate(i.updated)}</small></button>`).join(''):'<div class="empty">Noch nichts bearbeitet – leg einfach los.</div>';
  renderStoreTile(); }
-function renderStoreTile(){ const n=items().length; const st=$('#stTotal'); if(!st)return; st.textContent=n; $('#stInfo').textContent=Store.mode==='ok'?'Gespeichert in deinem Claude-Konto – auf allen Geräten verfügbar, auf denen du diese App öffnest.':Store.mode==='warn'?'Die Cloud ist gerade nicht erreichbar. Alles wird in diesem Browser gesichert.':'Gespeichert in diesem Browser. Tipp: Wichtige Dateien zusätzlich exportieren.'; }
+function renderStoreTile(){ const n=items().length; const st=$('#stTotal'); if(!st)return; let lb=0; try{ lb=+localStorage.getItem('bo_lastBackup')||0; }catch(e){} const bs=$('#bkSave'); if(bs) bs.title='Alle Dateien und Einstellungen in eine Datei speichern'+(lb?' – letzte Sicherung: '+fmtDate(lb):''); st.textContent=n; $('#stInfo').textContent=Store.mode==='ok'?'Gespeichert in deinem Claude-Konto – auf allen Geräten verfügbar, auf denen du diese App öffnest.':Store.mode==='warn'?'Die Cloud ist gerade nicht erreichbar. Alles wird in diesem Browser gesichert.':'Gespeichert in diesem Browser. Für einen anderen Browser oder PC: „Sicherung speichern“ und dort „Sicherung laden“.'; }
 
 /* ============ Editor-Werkzeuge (Text & Notizen) ============ */
 let savedRange=null, savedEd=null;
@@ -970,6 +974,7 @@ $('#txCanvas').addEventListener('scroll',()=>{ pop.style.display='none'; });
 
 /* ============ Import ============ */
 async function importFile(f,prefer){ const ext=(f.name.split('.').pop()||'').toLowerCase(); const base=f.name.replace(/\.[^.]+$/,'');
+ if(ext==='json'&&/^Bayazit-Office-Sicherung/i.test(f.name)){ return backupLoad(f); }
  try{
   if(ext==='docx'){ toast('Word-Datei wird geöffnet …'); const m=await loadLib('mammoth'); const r=await m.convertToHtml({arrayBuffer:await f.arrayBuffer()}); txNew(base,sanitize(r.value)||'<p><br></p>'); }
   else if((ext==='txt'||ext==='md')&&prefer==='text'){ const t=await f.text(); txNew(base,t.split(/\r?\n/).map(l=>'<p>'+(esc(l)||'<br>')+'</p>').join('')); }
@@ -1443,6 +1448,47 @@ $('#edJBar').addEventListener('click',e=>{ const b=e.target.closest('[data-jv],[
 $('#edTree').addEventListener('click',e=>{ if(e.target.closest('[data-jv]')){ edSetView('raw'); return; } const r=e.target.closest('.jr'); if(!r)return; $$('#edTree .jr.sel').forEach(x=>x.classList.remove('sel')); r.classList.add('sel'); const n=r.parentElement; if(n.dataset.i!=null&&(e.target.closest('.jk'))) n.classList.contains('c')?jExpand(n):jCollapse(n); });
 $('#jSort').addEventListener('change',()=>{ if(JT.on) jRender(); });
 let jFT=0; $('#jFilter').addEventListener('input',()=>{ clearTimeout(jFT); jFT=setTimeout(()=>{ if(!JT.on) edSetView('tree'); else jRender(); },200); });
+
+
+/* ============ Sicherung / Übertragen ============ */
+function flushAll(){ try{ if(TX.cur) txSave(); }catch(e){} try{ if(NT.cur) ntSave(); }catch(e){} try{ if(SS.editing) ssCommit(null); clearTimeout(SS.t); const it=curSheetItem(); if(it) saveItem(it); }catch(e){} try{ if(ED.cur){ clearTimeout(ED.pt); edPersist(ED.cur); } }catch(e){} }
+async function backupSave(){
+ flushAll();
+ const its={}; let n=0;
+ Object.values(Store.items).forEach(it=>{ if(!it||it.deleted)return; const c=JSON.parse(JSON.stringify(it)); if(c.type==='code'){ const d=ED.docs[c.id]; if(d){ c.content=d.getValue(); c.big=false; } else if(ED.pending[c.id]!=null){ c.content=ED.pending[c.id]; c.big=false; } } its[c.id]=c; n++; });
+ if(!n){ toast('Noch keine Dateien zum Sichern'); return; }
+ let theme=null; try{ theme=localStorage.getItem('bo_theme'); }catch(e){}
+ const data={app:'Bayazit Office',version:1,created:new Date().toISOString(),items:its,settings:Store.settings,editor:ED.opt,theme};
+ const d=new Date(), pad=x=>String(x).padStart(2,'0');
+ const name=`Bayazit-Office-Sicherung-${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}.json`;
+ if(await download(name,new Blob([JSON.stringify(data)],{type:'application/json'}))){ try{ localStorage.setItem('bo_lastBackup',String(Date.now())); }catch(e){} renderStoreTile(); toast(n+' Dateien gesichert'); }
+}
+const pl=(n,a,b)=>n+' '+(n===1?a:b);
+async function backupLoad(file){
+ if(!file){ file=await pickFile('.json,application/json'); if(!file) return; }
+ let data; try{ data=JSON.parse(await file.text()); }catch(e){ toast('Diese Datei ist keine gültige Sicherung'); return; }
+ if(!data||data.app!=='Bayazit Office'||!data.items){ toast('Das ist keine Sicherung von Bayazit Office'); return; }
+ const list=Object.values(data.items).filter(i=>i&&i.id&&i.type&&!i.deleted);
+ const cnt=t=>list.filter(i=>i.type===t).length;
+ const when=data.created?new Date(data.created).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'unbekannt';
+ const r=await dialog({title:'Sicherung laden',body:`<p>Sicherung vom <b>${esc(when)}</b> mit ${list.length} Dateien:<br>${pl(cnt('text'),'Dokument','Dokumente')} · ${pl(cnt('sheet'),'Tabelle','Tabellen')} · ${pl(cnt('note'),'Notiz','Notizen')} · ${pl(cnt('code'),'Editor-Datei','Editor-Dateien')}</p><label class="chkl" style="margin-top:12px"><input type="radio" name="m" value="merge" checked> Zusammenführen (empfohlen) – vorhandene Dateien bleiben, bei gleichen Dateien gewinnt die neuere</label><label class="chkl"><input type="radio" name="m" value="replace"> Alles ersetzen – alle Dateien in diesem Browser werden durch die Sicherung ersetzt</label>`,ok:'Laden'});
+ if(!r) return;
+ const rb=document.querySelector('#mBody input[value=replace]'); const replace=!!(rb&&rb.checked);
+ flushAll();
+ let added=0, updated=0, removed=0;
+ if(replace){ Object.values(Store.items).forEach(it=>{ if(it&&!it.deleted&&!data.items[it.id]){ Store.items[it.id]={id:it.id,type:it.type,deleted:true,updated:Date.now()}; removed++; scheduleRemote(it.id,true); } }); }
+ list.forEach(src=>{ const it=JSON.parse(JSON.stringify(src)); const cur=Store.items[it.id]; if(!cur||cur.deleted){ added++; } else if(!replace&&(cur.updated||0)>=(it.updated||0)){ return; } else updated++;
+  it.updated=Math.max(Date.now(),it.updated||0); if(it.type==='code'){ it.big=(it.content||'').length>1000000; if(it.big){ ED.pending[it.id]=it.content; it.content=''; } } Store.items[it.id]=it; scheduleRemote(it.id,true); });
+ if(data.settings){ const nb=new Set([...(Store.settings.notebooks||[]),...(data.settings.notebooks||[])]); Store.settings.notebooks=replace?(data.settings.notebooks||['Allgemein']):[...nb]; if(!Store.settings.notebooks.includes('Allgemein')) Store.settings.notebooks.unshift('Allgemein'); }
+ if(data.editor) { Object.assign(ED.opt,data.editor); edSaveOpt(); if(ED.cm){ ED.cm.setOption('lineWrapping',ED.opt.wrap); ED.cm.setOption('lineNumbers',ED.opt.nums); ED.cm.getWrapperElement().style.fontSize=ED.opt.size+'px'; } }
+ if(data.theme){ try{ localStorage.setItem('bo_theme',data.theme); }catch(e){} Store.settings.theme=data.theme; applyTheme(); }
+ saveSettings(); persistLocal();
+ TX.cur=null; SS.cur=null; NT.cur=null; ED.docs={}; ED.cur=null;
+ refreshLists(); show(CUR);
+ toast(`Sicherung geladen: ${added} neu, ${updated} aktualisiert`+(removed?`, ${removed} entfernt`:''));
+}
+$('#bkSave').onclick=backupSave;
+$('#bkLoad').onclick=()=>backupLoad();
 
 /* ============ Vorlagen ============ */
 function monthName(){ return new Date().toLocaleDateString('de-DE',{month:'long',year:'numeric'}); }
